@@ -44,7 +44,7 @@ var existing = await dbContext.Courses
     .Include(c => c.MentorAssignments)
     .FirstAsync(c => c.Id == id);
 
-dbContext.InsertUpdateOrDeleteGraph(updated, existing);
+dbContext.UpdateGraph(updated, existing);
 await dbContext.SaveChangesAsync();
 ```
 
