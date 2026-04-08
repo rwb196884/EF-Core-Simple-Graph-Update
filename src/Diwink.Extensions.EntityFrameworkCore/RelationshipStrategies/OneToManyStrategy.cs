@@ -12,11 +12,8 @@ namespace Diwink.Extensions.EntityFrameworkCore.RelationshipStrategies;
 internal static class OneToManyStrategy
 {
     /// <summary>
-    /// Synchronizes a payload-based many-to-many collection navigation so its association entities match the provided target collection.
+    /// Synchronizes a one-to-many collection navigation so its association entities match the provided target collection.
     /// </summary>
-    /// <remarks>
-    /// Removes association entities that are not present in <paramref name="updatedCollection"/>, updates payload values on matching tracked associations, and adds new association entities to the navigation when no tracked match exists. Deleting an association entity only removes the association row; related non-association entities are not deleted.
-    /// </remarks>
     /// <param name="context">The DbContext used to inspect entity keys and apply changes.</param>
     /// <param name="existingNavigation">The collection navigation that currently holds the association entities (may be null/empty).</param>
     /// <param name="updatedCollection">The desired collection of association entity instances to reconcile the navigation with.</param>
@@ -51,11 +48,15 @@ internal static class OneToManyStrategy
             {
                 // Update fields on existing entity.
                 context.Entry(existingMatch).CurrentValues.SetValues(updatedItem);
+                GraphUpdateOrchestrator.ApplyNavigations(context, context.Entry(existingMatch), updatedItem, updatedItem.GetType());
             }
             else
             {
                 // New entity --— add to collection.
                 AddToCollection(existingNavigation, updatedItem);
+                // It should now be in existingItems.
+                existingMatch = FindInTracked(context, existingItems, updatedKeys)!;
+                GraphUpdateOrchestrator.ApplyNavigations(context, context.Entry(existingMatch), updatedItem, updatedItem.GetType());
             }
         }
     }
