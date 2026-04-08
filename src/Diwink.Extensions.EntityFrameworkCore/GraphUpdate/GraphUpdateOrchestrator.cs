@@ -67,58 +67,58 @@ internal static class GraphUpdateOrchestrator
 
         try
         {
-        // Check loaded navigations for unsupported mutations
-        foreach (var navigation in existingEntry.Navigations
-            .Where(n => n.IsLoaded))
-        {
-            var navMetadata = navigation.Metadata;
-            if (IsNavigationBackToAggregateRoot(navMetadata, aggregateType))
-                continue;
-
-            var entityPath = $"{existingEntry.Metadata.ClrType.Name}.{navMetadata.Name}";
-
-            var classification = ClassifyNavigation(navMetadata);
-
-            if (classification == NavigationClassification.Unsupported)
+            // Check loaded navigations for unsupported mutations
+            foreach (NavigationEntry? navigation in existingEntry.Navigations
+                .Where(n => n.IsLoaded))
             {
-                // FR-018/FR-019: Check if mutations exist in unsupported navigation
-                if (HasMutations(context, navigation, updatedEntity, navMetadata))
+                INavigationBase navMetadata = navigation.Metadata;
+                if (IsNavigationBackToAggregateRoot(navMetadata, aggregateType))
+                    continue;
+
+                string entityPath = $"{existingEntry.Metadata.ClrType.Name}.{navMetadata.Name}";
+
+                NavigationClassification classification = ClassifyNavigation(navMetadata);
+
+                if (classification == NavigationClassification.Unsupported)
                 {
-                    guard.AddError(new UnsupportedNavigationMutatedException(
-                        entityPath,
-                        GetRelationshipTypeName(navMetadata)));
+                    // FR-018/FR-019: Check if mutations exist in unsupported navigation
+                    if (HasMutations(context, navigation, updatedEntity, navMetadata))
+                    {
+                        guard.AddError(new UnsupportedNavigationMutatedException(
+                            entityPath,
+                            GetRelationshipTypeName(navMetadata)));
+                    }
+                    // else: silently skip (FR-019)
+                    continue;
                 }
-                // else: silently skip (FR-019)
-                continue;
+
+                ValidateLoadedChildren(
+                    context,
+                    navigation,
+                    updatedEntity,
+                    aggregateType,
+                    guard,
+                    recursionPath);
             }
 
-            ValidateLoadedChildren(
-                context,
-                navigation,
-                updatedEntity,
-                aggregateType,
-                guard,
-                recursionPath);
-        }
-
-        // FR-015/FR-016: Check unloaded navigations for attempted mutations
-        foreach (var navigation in existingEntry.Navigations
-            .Where(n => !n.IsLoaded))
-        {
-            var navMetadata = navigation.Metadata;
-
-            if (IsNavigationBackToAggregateRoot(navMetadata, aggregateType))
-                continue;
-
-            var entityPath = $"{existingEntry.Metadata.ClrType.Name}.{navMetadata.Name}";
-
-            if (HasUnloadedMutationAttempt(updatedEntity, navMetadata))
+            // FR-015/FR-016: Check unloaded navigations for attempted mutations
+            foreach (NavigationEntry? navigation in existingEntry.Navigations
+                .Where(n => !n.IsLoaded))
             {
-                guard.AddError(new UnloadedNavigationMutationException(
-                    entityPath,
-                    navMetadata.Name));
+                INavigationBase navMetadata = navigation.Metadata;
+
+                if (IsNavigationBackToAggregateRoot(navMetadata, aggregateType))
+                    continue;
+
+                string entityPath = $"{existingEntry.Metadata.ClrType.Name}.{navMetadata.Name}";
+
+                if (HasUnloadedMutationAttempt(updatedEntity, navMetadata))
+                {
+                    guard.AddError(new UnloadedNavigationMutationException(
+                        entityPath,
+                        navMetadata.Name));
+                }
             }
-        }
         }
         finally
         {
@@ -219,6 +219,10 @@ internal static class GraphUpdateOrchestrator
                 PayloadManyToManyStrategy.Apply(context, existingNavigation, updatedCollection);
                 break;
 
+            case NavigationClassification.OneToMany:
+                OneToManyStrategy.Apply(context, existingNavigation, updatedCollection);
+                break;
+
             default:
                 // Should not reach here — unsupported already filtered
                 break;
@@ -304,18 +308,29 @@ internal static class GraphUpdateOrchestrator
             {
                 // Check if this is a payload many-to-many (explicit join entity)
                 if (IsPayloadJoinEntity(nav.TargetEntityType))
+                {
                     return NavigationClassification.PayloadManyToMany;
-
+                }
                 // Regular one-to-many — unsupported in v2
+
+                if(!foreignKey.IsUnique)
+                {
+                    return NavigationClassification.OneToMany;
+                }
+
                 return NavigationClassification.Unsupported;
             }
 
             // Reference navigation — one-to-one
             if (!foreignKey.IsUnique)
+            {
                 return NavigationClassification.Unsupported;
+            }
 
             if (foreignKey.IsRequired)
+            {
                 return NavigationClassification.RequiredOneToOne;
+            }
 
             return NavigationClassification.OptionalOneToOne;
         }
@@ -573,5 +588,6 @@ internal enum NavigationClassification
     PayloadManyToMany,
     RequiredOneToOne,
     OptionalOneToOne,
+    OneToMany,
     Unsupported
 }
