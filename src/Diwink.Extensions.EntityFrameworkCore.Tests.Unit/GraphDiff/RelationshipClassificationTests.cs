@@ -1,4 +1,6 @@
 using Diwink.Extensions.EntityFrameworkCore.GraphUpdate;
+using Diwink.Extensions.EntityFrameworkCore.TestModel;
+using Diwink.Extensions.EntityFrameworkCore.TestModel.Entities;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,7 +29,23 @@ public class RelationshipClassificationTests
             .FindNavigation(nameof(JoinRoot.PureLinks))!;
 
         GraphUpdateOrchestrator.ClassifyNavigation(navigation)
-            .Should().Be(NavigationClassification.Unsupported);
+            .Should().Be(NavigationClassification.OneToMany);
+    }
+
+    [Fact]
+    public void One_to_many_collection_is_classified_as_one_to_many()
+    {
+        var options = new DbContextOptionsBuilder<TestDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var context = new TestDbContext(options);
+
+        var navigation = context.Model
+            .FindEntityType(typeof(LearningCatalog))!
+            .FindNavigation(nameof(LearningCatalog.Courses))!;
+
+        GraphUpdateOrchestrator.ClassifyNavigation(navigation)
+            .Should().Be(NavigationClassification.OneToMany);
     }
 
     private static JoinClassificationContext CreateContext()

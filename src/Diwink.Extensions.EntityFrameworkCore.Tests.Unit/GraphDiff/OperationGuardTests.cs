@@ -64,7 +64,7 @@ public class OperationGuardTests
     {
         var guard = new OperationGuard();
         guard.AddError(new UnsupportedNavigationMutatedException("A.B", "OneToMany"));
-        guard.AddError(new UnsupportedRelationshipPatternException("C.D", "Custom"));
+        guard.AddError(new UnloadedNavigationMutationException("C.D", "Nav"));
 
         guard.Errors.Should().HaveCount(2);
         guard.Errors.Should().NotBeAssignableTo<List<GraphUpdateException>>();

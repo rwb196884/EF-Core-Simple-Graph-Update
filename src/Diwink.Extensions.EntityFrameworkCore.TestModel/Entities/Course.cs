@@ -17,4 +17,7 @@ public class Course
 
     // Pure many-to-many (skip navigation)
     public ICollection<TopicTag> Tags { get; set; } = [];
+
+    // One-to-many (optional FK)
+    public ICollection<CourseReview> Reviews { get; set; } = [];
 }

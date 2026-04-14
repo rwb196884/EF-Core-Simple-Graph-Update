@@ -123,82 +123,6 @@ public class GraphUpdateExceptionTests
     }
 
     // -------------------------------------------------------------------------
-    // AmbiguousOwnershipSemanticsException
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public void AmbiguousOwnershipSemanticsException_stores_relationship_path()
-    {
-        var ex = new AmbiguousOwnershipSemanticsException("Mentor.Workspace", "FK nullability unknown");
-
-        ex.RelationshipPath.Should().Be("Mentor.Workspace");
-    }
-
-    [Fact]
-    public void AmbiguousOwnershipSemanticsException_stores_missing_detail()
-    {
-        var ex = new AmbiguousOwnershipSemanticsException("Mentor.Workspace", "FK nullability unknown");
-
-        ex.MissingDetail.Should().Be("FK nullability unknown");
-    }
-
-    [Fact]
-    public void AmbiguousOwnershipSemanticsException_message_contains_path_and_detail()
-    {
-        var ex = new AmbiguousOwnershipSemanticsException("Mentor.Workspace", "FK nullability unknown");
-
-        ex.Message.Should().Contain("Mentor.Workspace");
-        ex.Message.Should().Contain("FK nullability unknown");
-    }
-
-    [Fact]
-    public void AmbiguousOwnershipSemanticsException_inherits_from_GraphUpdateException()
-    {
-        var ex = new AmbiguousOwnershipSemanticsException("A.B", "detail");
-
-        ex.Should().BeAssignableTo<GraphUpdateException>();
-        ex.Should().BeAssignableTo<InvalidOperationException>();
-    }
-
-    // -------------------------------------------------------------------------
-    // UnsupportedRelationshipPatternException
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public void UnsupportedRelationshipPatternException_stores_relationship_path()
-    {
-        var ex = new UnsupportedRelationshipPatternException("Course.Modules", "SelfReferential");
-
-        ex.RelationshipPath.Should().Be("Course.Modules");
-    }
-
-    [Fact]
-    public void UnsupportedRelationshipPatternException_stores_pattern_identifier()
-    {
-        var ex = new UnsupportedRelationshipPatternException("Course.Modules", "SelfReferential");
-
-        ex.PatternIdentifier.Should().Be("SelfReferential");
-    }
-
-    [Fact]
-    public void UnsupportedRelationshipPatternException_message_contains_path_and_pattern()
-    {
-        var ex = new UnsupportedRelationshipPatternException("Course.Modules", "SelfReferential");
-
-        ex.Message.Should().Contain("Course.Modules");
-        ex.Message.Should().Contain("SelfReferential");
-    }
-
-    [Fact]
-    public void UnsupportedRelationshipPatternException_inherits_from_GraphUpdateException()
-    {
-        var ex = new UnsupportedRelationshipPatternException("A.B", "pattern");
-
-        ex.Should().BeAssignableTo<GraphUpdateException>();
-        ex.Should().BeAssignableTo<InvalidOperationException>();
-    }
-
-    // -------------------------------------------------------------------------
     // Boundary / regression cases
     // -------------------------------------------------------------------------
 
@@ -209,8 +133,6 @@ public class GraphUpdateExceptionTests
         typeof(UnsupportedNavigationMutatedException).IsSealed.Should().BeTrue();
         typeof(UnloadedNavigationMutationException).IsSealed.Should().BeTrue();
         typeof(PartialMutationNotAllowedException).IsSealed.Should().BeTrue();
-        typeof(AmbiguousOwnershipSemanticsException).IsSealed.Should().BeTrue();
-        typeof(UnsupportedRelationshipPatternException).IsSealed.Should().BeTrue();
     }
 
     [Fact]
@@ -246,5 +168,14 @@ public class GraphUpdateExceptionTests
         ex.RelationshipPath.Should().Be("Course.Policy.Revision");
         ex.NavigationName.Should().Be("Revision");
         ex.RelationshipPath.Should().NotBe(ex.NavigationName);
+    }
+
+    [Fact]
+    public void UnloadedNavigationMutationException_rejects_blank_navigation_name()
+    {
+        var act = () => new UnloadedNavigationMutationException("Course.Tags", " ");
+
+        act.Should().Throw<ArgumentException>()
+            .Which.ParamName.Should().Be("navigationName");
     }
 }

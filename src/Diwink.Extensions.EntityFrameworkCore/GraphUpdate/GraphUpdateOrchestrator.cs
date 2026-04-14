@@ -1,6 +1,5 @@
 using Diwink.Extensions.EntityFrameworkCore.Exceptions;
 using Diwink.Extensions.EntityFrameworkCore.RelationshipStrategies;
-using Diwink.Extensions.EntityFrameworkCore.Traversal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -18,15 +17,13 @@ namespace Diwink.Extensions.EntityFrameworkCore.GraphUpdate;
 internal static class GraphUpdateOrchestrator
 {
     /// <summary>
-    /// Entry point for graph update orchestration.
-    /// <summary>
     /// Orchestrates validation and application of changes from a detached updated entity graph onto an existing tracked entity graph.
     /// </summary>
     /// <param name="context">The DbContext that is tracking <paramref name="existingEntity"/> and provides EF metadata and change tracking.</param>
-    /// <param name="updatedEntity">A detached entity graph containing proposed scalar and navigation changes.</param>
     /// <param name="existingEntity">The tracked root entity whose scalar properties and loaded navigations will be updated.</param>
+    /// <param name="updatedEntity">A detached entity graph containing proposed scalar and navigation changes.</param>
     /// <returns>The same <paramref name="existingEntity"/> instance after applying validated updates from <paramref name="updatedEntity"/>.</returns>
-    public static T UpdateGraph<T>(DbContext context, T updatedEntity, T existingEntity)
+    public static T UpdateGraph<T>(DbContext context, T existingEntity, T updatedEntity)
         where T : class
     {
         var existingEntry = context.Entry(existingEntity);
@@ -72,7 +69,7 @@ internal static class GraphUpdateOrchestrator
             .Where(n => n.IsLoaded))
         {
             var navMetadata = navigation.Metadata;
-            if (IsNavigationBackToAggregateRoot(navMetadata, aggregateType))
+            if (ShouldSkipNavigation(navMetadata, aggregateType))
                 continue;
 
             var entityPath = $"{existingEntry.Metadata.ClrType.Name}.{navMetadata.Name}";
@@ -107,7 +104,7 @@ internal static class GraphUpdateOrchestrator
         {
             var navMetadata = navigation.Metadata;
 
-            if (IsNavigationBackToAggregateRoot(navMetadata, aggregateType))
+            if (ShouldSkipNavigation(navMetadata, aggregateType))
                 continue;
 
             var entityPath = $"{existingEntry.Metadata.ClrType.Name}.{navMetadata.Name}";
@@ -127,11 +124,8 @@ internal static class GraphUpdateOrchestrator
     }
 
     /// <summary>
-    /// Checks whether the updated entity provides non-empty values for a navigation
-    /// that was not loaded. A non-empty collection or non-null reference is treated
-    /// as an attempted mutation on an unloaded navigation (FR-015).
-    /// <summary>
     /// Determines whether the detached updated entity attempted to mutate the specified unloaded navigation.
+    /// A non-empty collection or non-null reference is treated as an attempted mutation (FR-015).
     /// </summary>
     /// <param name="updatedEntity">The detached entity graph provided for the update.</param>
     /// <param name="navMetadata">Metadata for the navigation property being inspected.</param>
@@ -140,7 +134,7 @@ internal static class GraphUpdateOrchestrator
         object updatedEntity,
         INavigationBase navMetadata)
     {
-        var navProperty = updatedEntity.GetType().GetProperty(navMetadata.Name);
+        var navProperty = PropertyAccessorCache.GetProperty(updatedEntity.GetType(), navMetadata.Name);
         if (navProperty is null)
             return false;
 
@@ -165,13 +159,22 @@ internal static class GraphUpdateOrchestrator
         DbContext context,
         EntityEntry existingEntry,
         object updatedEntity,
-        Type aggregateType)
+        Type aggregateType,
+        HashSet<object>? visitedEntities = null)
     {
+        // Cycle detection: skip entities already processed during this graph update.
+        // Uses permanent membership (unlike validation's try/finally) because
+        // re-applying navigations on an already-processed entity would be
+        // redundant at best, conflicting at worst.
+        visitedEntities ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+        if (!visitedEntities.Add(existingEntry.Entity))
+            return;
+
         foreach (var navigation in existingEntry.Navigations
             .Where(n => n.IsLoaded))
         {
             var navMetadata = navigation.Metadata;
-            if (IsNavigationBackToAggregateRoot(navMetadata, aggregateType))
+            if (ShouldSkipNavigation(navMetadata, aggregateType))
                 continue;
 
             var classification = ClassifyNavigation(navMetadata);
@@ -185,11 +188,11 @@ internal static class GraphUpdateOrchestrator
 
             if (navigation is CollectionEntry collectionEntry)
             {
-                ApplyCollectionNavigation(context, collectionEntry, updatedValue, classification);
+                ApplyCollectionNavigation(context, collectionEntry, updatedValue, classification, aggregateType, visitedEntities);
             }
             else if (navigation is ReferenceEntry referenceEntry)
             {
-                ApplyReferenceNavigation(context, referenceEntry, updatedValue, classification, aggregateType);
+                ApplyReferenceNavigation(context, referenceEntry, updatedValue, classification, aggregateType, visitedEntities);
             }
         }
     }
@@ -205,18 +208,24 @@ internal static class GraphUpdateOrchestrator
         DbContext context,
         CollectionEntry existingNavigation,
         object? updatedValue,
-        NavigationClassification classification)
+        NavigationClassification classification,
+        Type aggregateType,
+        HashSet<object> visitedEntities)
     {
         var updatedCollection = updatedValue as IEnumerable<object> ?? [];
 
         switch (classification)
         {
             case NavigationClassification.PureManyToMany:
-                PureManyToManyStrategy.Apply(context, existingNavigation, updatedCollection);
+                PureManyToManyStrategy.Apply(context, existingNavigation, updatedCollection, aggregateType, visitedEntities);
                 break;
 
             case NavigationClassification.PayloadManyToMany:
-                PayloadManyToManyStrategy.Apply(context, existingNavigation, updatedCollection);
+                PayloadManyToManyStrategy.Apply(context, existingNavigation, updatedCollection, aggregateType, visitedEntities);
+                break;
+
+            case NavigationClassification.OneToMany:
+                OneToManyStrategy.Apply(context, existingNavigation, updatedCollection, aggregateType, visitedEntities);
                 break;
 
             default:
@@ -237,7 +246,8 @@ internal static class GraphUpdateOrchestrator
         ReferenceEntry existingNavigation,
         object? updatedValue,
         NavigationClassification classification,
-        Type aggregateType)
+        Type aggregateType,
+        HashSet<object> visitedEntities)
     {
         var existingValue = existingNavigation.CurrentValue;
 
@@ -253,7 +263,7 @@ internal static class GraphUpdateOrchestrator
             // Update existing reference — scalars + nested navigations
             var childEntry = context.Entry(existingValue);
             childEntry.CurrentValues.SetValues(updatedValue);
-            ApplyNavigations(context, childEntry, updatedValue, aggregateType);
+            ApplyNavigations(context, childEntry, updatedValue, aggregateType, visitedEntities);
         }
         else if (updatedValue is not null && existingValue is null)
         {
@@ -281,8 +291,6 @@ internal static class GraphUpdateOrchestrator
     }
 
     /// <summary>
-    /// Classifies a navigation as a supported or unsupported relationship pattern.
-    /// <summary>
     /// Classifies the given navigation metadata into a relationship pattern used to drive graph update behavior.
     /// </summary>
     /// <param name="navMetadata">Metadata for the navigation property to classify.</param>
@@ -306,8 +314,8 @@ internal static class GraphUpdateOrchestrator
                 if (IsPayloadJoinEntity(nav.TargetEntityType))
                     return NavigationClassification.PayloadManyToMany;
 
-                // Regular one-to-many — unsupported in v2
-                return NavigationClassification.Unsupported;
+                // Principal-side collection → one-to-many
+                return NavigationClassification.OneToMany;
             }
 
             // Reference navigation — one-to-one
@@ -324,11 +332,9 @@ internal static class GraphUpdateOrchestrator
     }
 
     /// <summary>
-    /// Detects whether an entity type is a payload join entity (explicit many-to-many).
+    /// Determines whether the given entity type represents an explicit many-to-many join entity that carries payload.
     /// A payload join entity has a composite key where all key parts are also foreign keys,
     /// AND it has additional non-key, non-FK properties (the payload).
-    /// <summary>
-    /// Determines whether the given entity type represents an explicit many-to-many join entity that carries payload.
     /// </summary>
     /// <param name="entityType">The EF Core entity metadata to inspect.</param>
     /// <returns>`true` if the entity has a primary key with at least two properties and every primary key property is included in at least one foreign key; `false` otherwise.</returns>
@@ -357,10 +363,8 @@ internal static class GraphUpdateOrchestrator
     }
 
     /// <summary>
-    /// Checks whether a loaded navigation has mutations between existing and updated state.
-    /// Used for FR-018 to detect changes in unsupported navigation types.
-    /// <summary>
     /// Determines whether the detached updated entity proposes mutations for the specified loaded navigation.
+    /// Used for FR-018 to detect changes in unsupported navigation types.
     /// </summary>
     /// <param name="navigation">The tracked navigation entry on the existing entity to compare against.</param>
     /// <param name="updatedEntity">The detached updated entity containing the candidate navigation value.</param>
@@ -492,7 +496,7 @@ internal static class GraphUpdateOrchestrator
         INavigationBase navMetadata,
         out object? updatedValue)
     {
-        var navProperty = updatedEntity.GetType().GetProperty(navMetadata.Name);
+        var navProperty = PropertyAccessorCache.GetProperty(updatedEntity.GetType(), navMetadata.Name);
         if (navProperty is null)
         {
             updatedValue = null;
@@ -537,15 +541,29 @@ internal static class GraphUpdateOrchestrator
     }
 
     /// <summary>
-    /// Determines whether the navigation's target entity type is the aggregate root type.
+    /// Determines whether the navigation should be skipped entirely during graph traversal.
+    /// This covers two cases:
+    /// 1. The navigation targets the aggregate root type (cycle back to root).
+    /// 2. The navigation is a dependent-side back-reference to its principal
+    ///    (e.g., CoursePolicy.Course). These are managed by the principal side
+    ///    and should never drive graph mutations.
     /// </summary>
-    /// <param name="navMetadata">The navigation metadata to inspect.</param>
-    /// <param name="aggregateType">The aggregate root CLR type to compare against.</param>
-    /// <returns>`true` if the navigation's target entity CLR type equals <paramref name="aggregateType"/>, `false` otherwise.</returns>
-    private static bool IsNavigationBackToAggregateRoot(INavigationBase navMetadata, Type aggregateType)
+    private static bool ShouldSkipNavigation(INavigationBase navMetadata, Type aggregateType)
     {
-        return navMetadata is INavigation nav &&
-               nav.TargetEntityType.ClrType == aggregateType;
+        if (navMetadata is not INavigation nav)
+            return false;
+
+        if (nav.TargetEntityType.ClrType == aggregateType)
+            return true;
+
+        // One-to-one dependent-side back-references (e.g., CoursePolicy.Course) are
+        // loaded by EF fixup but should not drive graph mutations — the principal side
+        // (e.g., Course.Policy) owns the relationship.
+        // Many-to-one references are handled separately as Unsupported in classification.
+        if (!nav.IsCollection && nav.IsOnDependent && nav.ForeignKey.IsUnique)
+            return true;
+
+        return false;
     }
 
     /// <summary>
@@ -573,5 +591,6 @@ internal enum NavigationClassification
     PayloadManyToMany,
     RequiredOneToOne,
     OptionalOneToOne,
+    OneToMany,
     Unsupported
 }

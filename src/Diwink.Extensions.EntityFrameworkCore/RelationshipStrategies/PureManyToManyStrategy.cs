@@ -1,4 +1,3 @@
-using System.Collections;
 using Diwink.Extensions.EntityFrameworkCore.GraphUpdate;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -23,7 +22,9 @@ internal static class PureManyToManyStrategy
     public static void Apply(
         DbContext context,
         CollectionEntry existingNavigation,
-        IEnumerable<object> updatedCollection)
+        IEnumerable<object> updatedCollection,
+        Type aggregateType,
+        HashSet<object> visitedEntities)
     {
         var existingItems = existingNavigation.CurrentValue?.Cast<object>().ToList() ?? [];
         var updatedItems = updatedCollection.ToList();
@@ -37,7 +38,7 @@ internal static class PureManyToManyStrategy
             {
                 // Unlink only — remove from the collection navigation
                 // EF Core will handle removing the join table row
-                RemoveFromCollection(existingNavigation, existingItem);
+                CollectionHelper.Remove(existingNavigation, existingItem);
             }
         }
 
@@ -45,12 +46,14 @@ internal static class PureManyToManyStrategy
         foreach (var updatedItem in updatedItems)
         {
             var updatedKeys = EntityKeyHelper.GetKeyValues(context, updatedItem);
-            var existingMatch = FindInTracked(context, existingItems, updatedKeys);
+            var existingMatch = EntityKeyHelper.FindByKeyInTracked(context, existingItems, updatedKeys);
 
             if (existingMatch is not null)
             {
-                // Update existing related entity properties
+                // Update existing related entity properties + recursive navigations
                 ApplyValuesIfNotModified(context, existingMatch, updatedItem);
+                GraphUpdateOrchestrator.ApplyNavigations(
+                    context, context.Entry(existingMatch), updatedItem, aggregateType, visitedEntities);
             }
             else
             {
@@ -59,25 +62,28 @@ internal static class PureManyToManyStrategy
                 var pk = entityType?.FindPrimaryKey();
                 if (pk is not null)
                 {
-                    // Find checks tracker first, then queries store
+                    // Find checks the change tracker first (no DB hit if already tracked),
+                    // then falls back to a store query. Per-item queries are acceptable
+                    // here because this path only runs for entities not already in the
+                    // current collection — typically a small count per graph update.
                     var knownEntity = context.Find(entityType!.ClrType, updatedKeys);
 
                     if (knownEntity is not null)
                     {
                         // Entity exists — update properties and create link
                         ApplyValuesIfNotModified(context, knownEntity, updatedItem);
-                        AddToCollection(existingNavigation, knownEntity);
+                        CollectionHelper.Add(existingNavigation, knownEntity);
                     }
                     else
                     {
                         // New entity — explicitly track as Added so EF inserts it
                         context.Add(updatedItem);
-                        AddToCollection(existingNavigation, updatedItem);
+                        CollectionHelper.Add(existingNavigation, updatedItem);
                     }
                 }
                 else
                 {
-                    AddToCollection(existingNavigation, updatedItem);
+                    CollectionHelper.Add(existingNavigation, updatedItem);
                 }
             }
         }
@@ -90,97 +96,5 @@ internal static class PureManyToManyStrategy
         {
             trackedEntry.CurrentValues.SetValues(updatedEntity);
         }
-    }
-
-    /// <summary>
-    /// Finds the first entity in a list of tracked items whose primary key values match the provided key values.
-    /// </summary>
-    /// <param name="context">The DbContext used to extract key values for each tracked item.</param>
-    /// <param name="trackedItems">A list of currently tracked entity instances to search.</param>
-    /// <param name="targetKeys">An array of key values to match against each tracked item's primary key values.</param>
-    /// <returns>The matching tracked entity instance if found; otherwise <c>null</c>.</returns>
-    private static object? FindInTracked(
-        DbContext context,
-        List<object> trackedItems,
-        object[] targetKeys)
-    {
-        foreach (var item in trackedItems)
-        {
-            var itemKeys = EntityKeyHelper.GetKeyValues(context.Entry(item));
-            if (EntityKeyHelper.KeysEqual(itemKeys, targetKeys))
-                return item;
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Remove an item from a collection-valued navigation property.
-    /// </summary>
-    /// <param name="navigation">The collection navigation entry whose current value will be modified.</param>
-    /// <param name="item">The related entity instance to remove from the navigation collection.</param>
-    private static void RemoveFromCollection(CollectionEntry navigation, object item)
-    {
-        ExecuteCollectionOperation(navigation, item, "remove", static (list, value) =>
-        {
-            list.Remove(value);
-        });
-    }
-
-    /// <summary>
-    /// Add an entity instance to the given navigation collection (handles IList or compatible ICollection&lt;T&gt; implementations).
-    /// </summary>
-    /// <param name="navigation">The EF Core collection navigation entry to modify.</param>
-    /// <param name="item">The entity instance to add to the navigation collection.</param>
-    /// <exception cref="InvalidOperationException">Thrown when the navigation's CurrentValue is null or does not support adding the item's type.</exception>
-    private static void AddToCollection(CollectionEntry navigation, object item)
-    {
-        ExecuteCollectionOperation(navigation, item, "add", static (list, value) =>
-        {
-            list.Add(value);
-        });
-    }
-
-    /// <summary>
-    /// Performs an add/remove operation against the runtime collection held by a navigation's CurrentValue.
-    /// </summary>
-    /// <param name="navigation">The collection navigation whose CurrentValue will be mutated.</param>
-    /// <param name="item">The item to add or remove from the collection.</param>
-    /// <param name="operation">A short operation name used in error messages (expected values: "add" or "remove").</param>
-    /// <param name="listOperation">A fallback action that performs the operation when the collection implements <see cref="IList"/>.</param>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when the navigation's CurrentValue is null; when the CurrentValue's runtime type does not expose a compatible generic <c>ICollection&lt;T&gt;</c> for the item's type; or when the discovered collection interface does not expose the expected Add/Remove method.
-    /// </exception>
-    private static void ExecuteCollectionOperation(
-        CollectionEntry navigation,
-        object item,
-        string operation,
-        Action<IList, object> listOperation)
-    {
-        var currentValue = navigation.CurrentValue ?? throw new InvalidOperationException(
-            $"Collection navigation '{navigation.Metadata.DeclaringEntityType.ClrType.Name}.{navigation.Metadata.Name}' has null CurrentValue; cannot {operation} item '{item}'.");
-
-        if (currentValue is IList list)
-        {
-            listOperation(list, item);
-            return;
-        }
-
-        var collectionInterface = currentValue.GetType().GetInterfaces()
-            .FirstOrDefault(i =>
-                i.IsGenericType &&
-                i.GetGenericTypeDefinition() == typeof(ICollection<>) &&
-                i.GenericTypeArguments[0].IsAssignableFrom(item.GetType()));
-
-        if (collectionInterface is null)
-        {
-            throw new InvalidOperationException(
-                $"Collection navigation '{navigation.Metadata.DeclaringEntityType.ClrType.Name}.{navigation.Metadata.Name}' with current value type '{currentValue.GetType().FullName}' does not support {operation} for item type '{item.GetType().FullName}'.");
-        }
-
-        var methodName = operation == "add" ? nameof(ICollection<object>.Add) : nameof(ICollection<object>.Remove);
-        var method = collectionInterface.GetMethod(methodName) ?? throw new InvalidOperationException(
-            $"Collection interface '{collectionInterface.FullName}' for navigation '{navigation.Metadata.DeclaringEntityType.ClrType.Name}.{navigation.Metadata.Name}' does not expose '{methodName}'.");
-
-        method.Invoke(currentValue, [item]);
     }
 }

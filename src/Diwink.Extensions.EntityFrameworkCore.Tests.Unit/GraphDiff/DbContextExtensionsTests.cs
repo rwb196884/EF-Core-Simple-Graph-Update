@@ -22,22 +22,10 @@ public class DbContextExtensionsTests
         var updated = new Course { Id = Guid.NewGuid(), CatalogId = Guid.NewGuid(), Title = "Updated", Code = "UPD-1" };
         var existing = new Course { Id = updated.Id, CatalogId = updated.CatalogId, Title = "Existing", Code = "EX-1" };
 
-        var act = () => DbContextExtensions.UpdateGraph<Course>(null!, updated, existing);
+        var act = () => DbContextExtensions.UpdateGraph<Course>(null!, existing, updated);
 
         act.Should().Throw<ArgumentNullException>()
             .Which.ParamName.Should().Be("context");
-    }
-
-    [Fact]
-    public void InsertUpdateOrDeleteGraph_throws_when_updated_entity_is_null()
-    {
-        using var context = CreateInMemoryContext();
-        var existing = new Course { Id = Guid.NewGuid(), CatalogId = Guid.NewGuid(), Title = "Existing", Code = "EX-1" };
-
-        var act = () => context.UpdateGraph<Course>(null!, existing);
-
-        act.Should().Throw<ArgumentNullException>()
-            .Which.ParamName.Should().Be("updatedEntity");
     }
 
     [Fact]
@@ -46,9 +34,21 @@ public class DbContextExtensionsTests
         using var context = CreateInMemoryContext();
         var updated = new Course { Id = Guid.NewGuid(), CatalogId = Guid.NewGuid(), Title = "Updated", Code = "UPD-1" };
 
-        var act = () => context.UpdateGraph(updated, null!);
+        var act = () => context.UpdateGraph<Course>(null!, updated);
 
         act.Should().Throw<ArgumentNullException>()
             .Which.ParamName.Should().Be("existingEntity");
+    }
+
+    [Fact]
+    public void InsertUpdateOrDeleteGraph_throws_when_updated_entity_is_null()
+    {
+        using var context = CreateInMemoryContext();
+        var existing = new Course { Id = Guid.NewGuid(), CatalogId = Guid.NewGuid(), Title = "Existing", Code = "EX-1" };
+
+        var act = () => context.UpdateGraph(existing, null!);
+
+        act.Should().Throw<ArgumentNullException>()
+            .Which.ParamName.Should().Be("updatedEntity");
     }
 }

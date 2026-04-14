@@ -15,15 +15,6 @@ public class ExceptionValidationTests
     }
 
     [Fact]
-    public void AmbiguousOwnershipSemanticsException_rejects_blank_missing_detail()
-    {
-        var act = () => new AmbiguousOwnershipSemanticsException("Course.Policy", " ");
-
-        act.Should().Throw<ArgumentException>()
-            .Which.ParamName.Should().Be("missingDetail");
-    }
-
-    [Fact]
     public void PartialMutationNotAllowedException_rejects_blank_unsupported_branch()
     {
         var act = () => new PartialMutationNotAllowedException("Course.Tags", " ");
@@ -33,11 +24,11 @@ public class ExceptionValidationTests
     }
 
     [Fact]
-    public void UnsupportedRelationshipPatternException_rejects_blank_pattern_identifier()
+    public void UnloadedNavigationMutationException_rejects_blank_navigation_name()
     {
-        var act = () => new UnsupportedRelationshipPatternException("Course.Tags", " ");
+        var act = () => new UnloadedNavigationMutationException("Course.Tags", " ");
 
         act.Should().Throw<ArgumentException>()
-            .Which.ParamName.Should().Be("patternIdentifier");
+            .Which.ParamName.Should().Be("navigationName");
     }
 }

@@ -52,7 +52,7 @@ public class UnloadedNavigationMutationTests : IntegrationTestBase
         };
 
         // Act & Assert — should reject because Tags wasn't loaded
-        var act = () => ctx.UpdateGraph(updated, existing);
+        var act = () => ctx.UpdateGraph(existing, updated);
         act.Should().Throw<UnloadedNavigationMutationException>()
             .Which.NavigationName.Should().Be("Tags");
     }
@@ -87,7 +87,7 @@ public class UnloadedNavigationMutationTests : IntegrationTestBase
         };
 
         // Act & Assert — should reject because Policy wasn't loaded
-        var act = () => ctx.UpdateGraph(updated, existing);
+        var act = () => ctx.UpdateGraph(existing, updated);
         act.Should().Throw<UnloadedNavigationMutationException>()
             .Which.NavigationName.Should().Be("Policy");
     }
@@ -117,7 +117,7 @@ public class UnloadedNavigationMutationTests : IntegrationTestBase
         };
 
         // Act — should NOT throw because Tags is unloaded and not mutated
-        ctx.UpdateGraph(updated, existing);
+        ctx.UpdateGraph(existing, updated);
         await ctx.SaveChangesAsync();
 
         // Assert

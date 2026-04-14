@@ -1,4 +1,3 @@
-using Diwink.Extensions.EntityFrameworkCore.Exceptions;
 using Diwink.Extensions.EntityFrameworkCore.TestModel;
 using Diwink.Extensions.EntityFrameworkCore.TestModel.Entities;
 using FluentAssertions;
@@ -18,7 +17,7 @@ public class UnsupportedRelationshipPatternTests
     }
 
     [Fact]
-    public async Task In_place_scalar_edit_in_unsupported_one_to_many_is_rejected()
+    public async Task In_place_scalar_edit_in_one_to_many_is_applied()
     {
         var dbName = Guid.NewGuid().ToString();
         var catalogId = Guid.NewGuid();
@@ -67,10 +66,18 @@ public class UnsupportedRelationshipPatternTests
                 ]
             };
 
-            var act = () => ctx.UpdateGraph(updated, existing);
+            ctx.UpdateGraph(existing, updated);
+            await ctx.SaveChangesAsync();
+        }
 
-            act.Should().Throw<UnsupportedNavigationMutatedException>()
-                .Which.RelationshipPath.Should().Be("LearningCatalog.Courses");
+        {
+            await using var verifyCtx = CreateInMemoryContext(dbName);
+            var catalog = await verifyCtx.LearningCatalogs
+                .Include(c => c.Courses)
+                .FirstAsync(c => c.Id == catalogId);
+
+            catalog.Courses.Should().ContainSingle()
+                .Which.Title.Should().Be("Retitled");
         }
     }
 }

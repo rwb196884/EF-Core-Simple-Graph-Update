@@ -12,6 +12,7 @@ public class TestDbContext : DbContext
     public DbSet<CourseMentorAssignment> CourseMentorAssignments => Set<CourseMentorAssignment>();
     public DbSet<CoursePolicy> CoursePolicies => Set<CoursePolicy>();
     public DbSet<MentorWorkspace> MentorWorkspaces => Set<MentorWorkspace>();
+    public DbSet<CourseReview> CourseReviews => Set<CourseReview>();
 
     /// <summary>
     /// Creates a TestDbContext configured with the specified EF Core options.

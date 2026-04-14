@@ -20,6 +20,6 @@ public sealed class UnloadedNavigationMutationException : GraphUpdateException
             "which was not explicitly loaded. The entire operation was rejected without partial apply.",
             relationshipPath)
     {
-        NavigationName = navigationName;
+        NavigationName = ValidateAndNormalize(navigationName, nameof(navigationName), "Navigation name");
     }
 }

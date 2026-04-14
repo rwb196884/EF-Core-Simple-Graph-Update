@@ -10,8 +10,6 @@ namespace Diwink.Extensions.EntityFrameworkCore.GraphUpdate;
 internal static class EntityKeyHelper
 {
     /// <summary>
-    /// Gets the primary key values for a tracked entity.
-    /// <summary>
     /// Extracts the primary key component values from a tracked EF Core entity entry.
     /// </summary>
     /// <param name="entry">The tracked entity entry to read key values from.</param>
@@ -30,8 +28,6 @@ internal static class EntityKeyHelper
             .ToArray();
     }
 
-    /// <summary>
-    /// Gets the primary key values for a detached entity using model metadata.
     /// <summary>
     /// Extracts the primary key component values for a detached CLR entity using the provided DbContext's model metadata.
     /// </summary>
@@ -57,8 +53,6 @@ internal static class EntityKeyHelper
             .ToArray();
     }
 
-    /// <summary>
-    /// Compares two key arrays for equality.
     /// <summary>
     /// Determines whether two arrays of primary-key component values are equal element-by-element in order.
     /// </summary>
@@ -97,8 +91,6 @@ internal static class EntityKeyHelper
     }
 
     /// <summary>
-    /// Finds a matching entity in a collection by primary key comparison.
-    /// <summary>
     /// Finds the first entity in <paramref name="collection"/> whose primary key components, as determined from <paramref name="context"/>'s model, match <paramref name="targetKeys"/>.
     /// </summary>
     /// <param name="collection">Sequence of entities to search.</param>
@@ -112,6 +104,27 @@ internal static class EntityKeyHelper
         foreach (var item in collection)
         {
             var itemKeys = GetKeyValues(context, item);
+            if (KeysEqual(itemKeys, targetKeys))
+                return item;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Finds the first entity in a list of tracked items whose primary key values match the provided key values.
+    /// </summary>
+    /// <param name="context">The DbContext used to extract key values for each tracked item.</param>
+    /// <param name="trackedItems">A list of currently tracked entity instances to search.</param>
+    /// <param name="targetKeys">An array of key values to match against each tracked item's primary key values.</param>
+    /// <returns>The matching tracked entity instance if found; otherwise <c>null</c>.</returns>
+    internal static object? FindByKeyInTracked(
+        DbContext context,
+        List<object> trackedItems,
+        object[] targetKeys)
+    {
+        foreach (var item in trackedItems)
+        {
+            var itemKeys = GetKeyValues(context.Entry(item));
             if (KeysEqual(itemKeys, targetKeys))
                 return item;
         }

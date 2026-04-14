@@ -6,10 +6,11 @@ using Microsoft.EntityFrameworkCore;
 namespace Diwink.Extensions.EntityFrameworkCore.Tests.Unit.RelationshipSemantics;
 
 /// <summary>
-/// Unit tests for one-to-one ownership resolver and removal strategy selection.
-/// Uses InMemory provider for fast isolated testing of strategy mechanics.
+/// Unit tests for one-to-one update behavior — required and optional removal,
+/// in-place update, add, and replace strategies via UpdateGraph().
+/// Uses InMemory provider for fast isolated testing.
 /// </summary>
-public class OneToOneOwnershipResolverTests
+public class OneToOneUpdateBehaviorTests
 {
     private static TestDbContext CreateInMemoryContext(string? dbName = null)
     {
@@ -65,7 +66,7 @@ public class OneToOneOwnershipResolverTests
                 Policy = null
             };
 
-            ctx.UpdateGraph(updated, existing);
+            ctx.UpdateGraph(existing, updated);
             await ctx.SaveChangesAsync();
         }
 
@@ -126,7 +127,7 @@ public class OneToOneOwnershipResolverTests
                 Workspace = null
             };
 
-            ctx.UpdateGraph(updated, existing);
+            ctx.UpdateGraph(existing, updated);
             await ctx.SaveChangesAsync();
         }
 
@@ -190,7 +191,7 @@ public class OneToOneOwnershipResolverTests
                 }
             };
 
-            ctx.UpdateGraph(updated, existing);
+            ctx.UpdateGraph(existing, updated);
             await ctx.SaveChangesAsync();
         }
 
@@ -243,7 +244,7 @@ public class OneToOneOwnershipResolverTests
                 }
             };
 
-            ctx.UpdateGraph(updated, existing);
+            ctx.UpdateGraph(existing, updated);
             await ctx.SaveChangesAsync();
         }
 
@@ -306,7 +307,7 @@ public class OneToOneOwnershipResolverTests
                 }
             };
 
-            ctx.UpdateGraph(updated, existing);
+            ctx.UpdateGraph(existing, updated);
             await ctx.SaveChangesAsync();
         }
 
@@ -378,7 +379,7 @@ public class OneToOneOwnershipResolverTests
                 }
             };
 
-            ctx.UpdateGraph(updated, existing);
+            ctx.UpdateGraph(existing, updated);
             await ctx.SaveChangesAsync();
         }
 

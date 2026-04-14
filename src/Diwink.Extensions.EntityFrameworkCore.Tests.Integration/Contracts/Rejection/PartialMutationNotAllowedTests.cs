@@ -26,56 +26,48 @@ public class PartialMutationNotAllowedTests : IntegrationTestBase
     [Fact]
     public async Task Mixed_supported_and_unsupported_mutations_rejects_entire_operation()
     {
-        // Arrange — load LearningCatalog with both Courses (unsupported 1:M) and Tags (supported M:M)
+        // Arrange — use Course as root with:
+        //   Course.Catalog (ManyToOne, unsupported) — loaded and mutated
+        //   Course.Tags (pure M:M, supported) — loaded and mutated
         await using var ctx = CreateContext();
-        var existing = await ctx.LearningCatalogs
-            .Include(c => c.Courses)
+        var existing = await ctx.Courses
+            .Include(c => c.Catalog)
             .Include(c => c.Tags)
-            .FirstAsync(c => c.Id == SeedData.CatalogId);
+            .FirstAsync(c => c.Id == SeedData.Course1Id);
 
-        var originalName = existing.Name;
+        var originalTitle = existing.Title;
 
-        // Updated graph has:
-        // - Supported mutation: change catalog name (scalar)
-        // - Supported mutation: modify tags (M:M)
-        // - Unsupported mutation: add a course (1:M)
-        var updated = new LearningCatalog
+        // Updated graph mutates both:
+        // - Scalar change on Course (supported)
+        // - Catalog name change (ManyToOne mutation, unsupported)
+        // - Tags unchanged (supported, no mutation)
+        var updated = new Course
         {
-            Id = SeedData.CatalogId,
-            Name = "Should NOT be applied",
+            Id = SeedData.Course1Id,
+            CatalogId = SeedData.CatalogId,
+            Title = "Should NOT be applied",
+            Code = existing.Code,
+            Catalog = new LearningCatalog
+            {
+                Id = SeedData.CatalogId,
+                Name = "Renamed Catalog"
+            },
             Tags = existing.Tags.Select(t => new TopicTag
             {
                 Id = t.Id,
                 Label = t.Label
-            }).ToList(),
-            Courses =
-            [
-                ..existing.Courses.Select(c => new Course
-                {
-                    Id = c.Id,
-                    CatalogId = c.CatalogId,
-                    Title = c.Title,
-                    Code = c.Code
-                }),
-                new Course
-                {
-                    Id = Guid.NewGuid(),
-                    CatalogId = SeedData.CatalogId,
-                    Title = "Injected Course",
-                    Code = "INJ-001"
-                }
-            ]
+            }).ToList()
         };
 
         // Act & Assert — entire operation rejected
-        var act = () => ctx.UpdateGraph(updated, existing);
+        var act = () => ctx.UpdateGraph(existing, updated);
         act.Should().Throw<GraphUpdateException>();
 
         // Verify no mutations were applied (all-or-nothing)
         await using var verifyCtx = CreateContext();
-        var result = await verifyCtx.LearningCatalogs
-            .FirstAsync(c => c.Id == SeedData.CatalogId);
-        result.Name.Should().Be(originalName,
+        var result = await verifyCtx.Courses
+            .FirstAsync(c => c.Id == SeedData.Course1Id);
+        result.Title.Should().Be(originalTitle,
             "scalar updates must NOT be applied when unsupported mutation causes rejection");
     }
 }

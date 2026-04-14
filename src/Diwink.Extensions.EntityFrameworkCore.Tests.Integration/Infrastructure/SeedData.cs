@@ -19,6 +19,8 @@ public static class SeedData
     public static readonly Guid Mentor1Id = Guid.Parse("d1000000-0000-0000-0000-000000000001");
     public static readonly Guid Mentor2Id = Guid.Parse("d1000000-0000-0000-0000-000000000002");
     public static readonly Guid Workspace1Id = Guid.Parse("e1000000-0000-0000-0000-000000000001");
+    public static readonly Guid Review1Id = Guid.Parse("f1000000-0000-0000-0000-000000000001");
+    public static readonly Guid Review2Id = Guid.Parse("f1000000-0000-0000-0000-000000000002");
 
     /// <summary>
     /// Seeds a complete test scenario with all relationship types represented.
@@ -72,6 +74,25 @@ public static class SeedData
                         IsMandatory = true
                     },
                     Tags = [tag1, tag2],
+                    Reviews =
+                    [
+                        new CourseReview
+                        {
+                            Id = Review1Id,
+                            CourseId = Course1Id,
+                            ReviewerName = "Alice",
+                            Rating = 5,
+                            Comment = "Excellent course"
+                        },
+                        new CourseReview
+                        {
+                            Id = Review2Id,
+                            CourseId = Course1Id,
+                            ReviewerName = "Bob",
+                            Rating = 4,
+                            Comment = "Very good"
+                        }
+                    ],
                     MentorAssignments =
                     [
                         new CourseMentorAssignment

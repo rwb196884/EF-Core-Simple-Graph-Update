@@ -18,7 +18,7 @@ public class LearningCatalogConfiguration : IEntityTypeConfiguration<LearningCat
         builder.HasKey(c => c.Id);
         builder.Property(c => c.Name).IsRequired().HasMaxLength(200);
 
-        // One-to-many (unsupported in v2 — present for FR-018/FR-019 testing)
+        // One-to-many (required FK, cascade delete)
         builder.HasMany(c => c.Courses)
             .WithOne(c => c.Catalog)
             .HasForeignKey(c => c.CatalogId)

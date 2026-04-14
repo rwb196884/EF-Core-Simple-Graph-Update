@@ -16,7 +16,7 @@ public class NestedNavigationValidationTests
     }
 
     [Fact]
-    public async Task Nested_unsupported_one_to_many_mutation_is_rejected()
+    public async Task Nested_one_to_many_scalar_edit_is_applied()
     {
         var dbName = Guid.NewGuid().ToString();
         var rootId = Guid.NewGuid();
@@ -77,10 +77,19 @@ public class NestedNavigationValidationTests
                 }
             };
 
-            var act = () => ctx.UpdateGraph(updated, existing);
+            ctx.UpdateGraph(existing, updated);
+            await ctx.SaveChangesAsync();
+        }
 
-            act.Should().Throw<UnsupportedNavigationMutatedException>()
-                .Which.RelationshipPath.Should().Be("RecursiveChild.Items");
+        {
+            await using var verifyCtx = CreateInMemoryContext(dbName);
+            var root = await verifyCtx.Roots
+                .Include(r => r.Child)
+                .ThenInclude(c => c!.Items)
+                .FirstAsync(r => r.Id == rootId);
+
+            root.Child!.Items.Should().ContainSingle()
+                .Which.Value.Should().Be("Changed");
         }
     }
 
@@ -139,7 +148,7 @@ public class NestedNavigationValidationTests
                 }
             };
 
-            var act = () => ctx.UpdateGraph(updated, existing);
+            var act = () => ctx.UpdateGraph(existing, updated);
 
             act.Should().Throw<UnloadedNavigationMutationException>()
                 .Which.NavigationName.Should().Be("Metadata");
@@ -197,7 +206,7 @@ public class NestedNavigationValidationTests
                 }
             };
 
-            ctx.UpdateGraph(updated, existing);
+            ctx.UpdateGraph(existing, updated);
             await ctx.SaveChangesAsync();
         }
 
@@ -271,7 +280,7 @@ public class NestedNavigationValidationTests
                 }
             };
 
-            ctx.UpdateGraph(updated, existing);
+            ctx.UpdateGraph(existing, updated);
             await ctx.SaveChangesAsync();
         }
 
